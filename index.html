@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>뉴스 생방송 계산기 (웹)</title>
+<style>
+  :root{
+    --bg:#0b1020;--card:#121933;--text:#eaf0ff;--muted:#a8b3cf;
+    --btn:#1b254b;--accent:#5b8cff;--bad:#ff5b7f;
+  }
+  html,body{
+    margin:0;height:100%;
+    background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans',Apple SD Gothic Neo,'Malgun Gothic',sans-serif
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 10px 25px rgba(0,0,0,.35);padding:18px}
+  .title{font-size:22px;font-weight:800;margin-bottom:6px}
+  .row{display:flex;align-items:center;gap:12px;margin:10px 0}
+  .label{min-width:160px;text-align:right;font-size:20px}
+  input[type="text"]{
+    flex:1 1 auto;
+    min-width:0;        /* 모바일에서 늘어나는 문제 방지 */
+    max-width:100%;     /* 부모 범위 안에서만 */
+    box-sizing:border-box;
+    background:#0e1533;border:0;border-radius:10px;color:var(--text);
+    font-size:20px;padding:10px 14px;outline:none
+  }
+  button{appearance:none;border:0;border-radius:12px;background:var(--btn);color:var(--text);
+    font-weight:800;font-size:18px;padding:12px 16px}
+  .action{width:100%;background:var(--accent)}
+  .center{display:flex;justify-content:center}
+  .result{font-size:20px;text-align:center;margin-top:14px}
+  .danger{color:var(--bad)}
+  .muted{color:var(--muted)}
+
+  /* 모바일 화면 대응 */
+  @media (max-width: 420px){
+    .row{flex-direction:column;align-items:stretch;gap:8px;}
+    .label{min-width:0;text-align:left;width:100%;}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="title">뉴스 생방송 계산기</div>
+
+      <div class="row">
+        <div class="label">날씨 길이 :</div>
+        <input id="inWeather" type="text" inputmode="numeric"
+          placeholder="예: 01:40 (분:초)" aria-label="날씨 길이 (분:초)">
+      </div>
+
+      <div class="row">
+        <div class="label">생방송 길이 :</div>
+        <input id="inPlan" type="text" inputmode="numeric"
+          placeholder="예: 23:00 (분:초)" aria-label="편성 생방송 길이 (분:초)">
+      </div>
+
+      <div class="row center" style="margin-top:14px">
+        <button id="btnCalc" class="action">날씨 시작과 동시에 클릭</button>
+      </div>
+
+      <div id="res1" class="result"></div>
+      <div id="res2" class="result danger"></div>
+
+      <div class="result muted" style="font-size:14px">
+        콜론(:) 입력 없이 숫자만 입력하면 자동으로 <b>mm:ss</b> 형식<br/>
+        예상 생방송 길이는 현재 시간(버튼 클릭 시점) + 날씨 길이<br/>
+        (생방송 길이 - 예상 생방송 길이)가 양수 → 추가, 음수 → 삭제
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+  const inWeather = $('#inWeather');
+  const inPlan    = $('#inPlan');
+  const btnCalc   = $('#btnCalc');
+  const res1      = $('#res1');
+  const res2      = $('#res2');
+
+  // ===== 입력 자동 mm:ss 포맷 =====
+  function autoColon(input){
+    let digits = input.value.replace(/\D/g,'');
+    if (digits.length > 6) digits = digits.slice(0,6);
+    if (digits.length <= 2){
+      input.value = digits;
+    } else {
+      input.value = digits.slice(0, -2) + ':' + digits.slice(-2);
+    }
+  }
+
+  function blockColonDelete(e){
+    const val = e.target.value;
+    const colonIdx = val.indexOf(':');
+    if (colonIdx === -1) return;
+    const s = e.target.selectionStart;
+    const en = e.target.selectionEnd;
+    if ((e.key === 'Backspace' && s === colonIdx + 1 && en === colonIdx + 1) ||
+        (e.key === 'Delete' && s === colonIdx && en === colonIdx) ||
+        (s <= colonIdx && en > colonIdx)) {
+      e.preventDefault();
+    }
+  }
+
+  [inWeather, inPlan].forEach(inp => {
+    inp.addEventListener('keydown', blockColonDelete, {passive:false});
+    inp.addEventListener('input', () => autoColon(inp));
+  });
+
+  // ===== 파싱/포맷 함수 =====
+  function parseMMSS(s){
+    if (!s) return null;
+    s = s.trim();
+    const m = s.match(/^(\d{1,3}):([0-5]?\d)$/);
+    if (!m) return null;
+    const mm = parseInt(m[1],10), ss = parseInt(m[2],10);
+    if (Number.isNaN(mm) || Number.isNaN(ss) || ss >= 60) return null;
+    return mm*60 + ss;
+  }
+  function fmtMMSS(totalSec){
+    const mm = Math.floor(totalSec / 60);
+    const ss = totalSec % 60;
+    const mmStr = mm < 100 ? String(mm).padStart(2,'0') : String(mm);
+    const ssStr = String(ss).padStart(2,'0');
+    return mmStr + ':' + ssStr;
+  }
+  function nowMinuteSecondTotal(){
+    const now = new Date();
+    return now.getMinutes()*60 + now.getSeconds();
+  }
+
+  // ===== 계산 =====
+  function calc(){
+    res1.textContent = '';
+    res2.textContent = '';
+    const nowTot = nowMinuteSecondTotal();
+    const wTot = parseMMSS(inWeather.value);
+    if (wTot === null){
+      res1.textContent = '입력 오류';
+      res2.textContent = '날씨 시간 형식 오류 (예: 00:00)';
+      return;
+    }
+    const pTot = parseMMSS(inPlan.value);
+    if (pTot === null){
+      res1.textContent = '입력 오류';
+      res2.textContent = '편성 시간 형식 오류 (예: 00:00)';
+      return;
+    }
+    const liveStart = nowTot + wTot;
+    res1.textContent = '예상 생방송 시간 : ' + fmtMMSS(liveStart);
+    const diff = pTot - liveStart;
+    const diffAbs = Math.abs(diff);
+    const diffStr = fmtMMSS(diffAbs);
+    if (diff > 0){
+      res2.textContent = diffStr + ' 추가';
+    } else if (diff < 0){
+      res2.textContent = diffStr + ' 삭제';
+    } else {
+      res2.textContent = '00:00';
+    }
+  }
+
+  // 버튼 클릭/터치
+  btnCalc.addEventListener('click', calc);
+  btnCalc.addEventListener('touchend', function(e){
+    e.preventDefault();
+    calc();
+  }, {passive:false});
+
+  // 모바일 키보드 엔터로 실행
+  [inWeather,inPlan].forEach(inp=>{
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') calc(); });
+  });
+})();
+</script>
+</body>
+</html>
